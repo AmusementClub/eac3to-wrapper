@@ -67,7 +67,16 @@ func findExe(name string, altdir ...string) (path string) {
 func checkEnv() {
 	if os.Getenv("EAC3TO_WRAPPER_DEV") == "" {
 		logf := fmt.Sprintf("%s_%s_%04X.log", "EAC", time.Now().Format("20060102-1504"), os.Getpid())
-		for _, dir := range []string{"./log", "../../log"} {
+
+		logPath := ""
+		exePath, err := os.Executable()
+		if err != nil {
+			log.Printf("unable to get exe path: %v\n", err)
+		} else {
+			logPath = filepath.Join(filepath.Dir(exePath), "../../log")
+		}
+
+		for _, dir := range []string{"./log", "../../log", logPath} {
 			fn := filepath.Join(dir, logf)
 			fd, err := os.OpenFile(fn, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 			if err == nil {
