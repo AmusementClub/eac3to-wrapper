@@ -1,3 +1,3 @@
 module eac3to-wrapper
 
-go 1.17
+go 1.26
