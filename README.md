@@ -46,16 +46,25 @@ Windows installations (CP936) with Japanese source paths: legacy eac3to may
 successfully analyse the source, then fail with `This audio conversion is not
 supported.`.
 
-The wrapper handles this by creating a per-invocation temporary ASCII-only
-NTFS junction for each existing absolute argument path containing non-ASCII
-characters. It passes the ASCII alias to legacy eac3to, then removes the
-junction after eac3to exits. The wrapper itself uses Unicode-aware Windows APIs
-for the alias setup and cleanup.
+The wrapper handles the documented absolute source and track-output forms by
+creating per-invocation ASCII-only directory aliases through Windows Unicode
+APIs. It passes only ASCII aliases to legacy eac3to, then removes them after
+processing. A source filename containing non-ASCII characters is exposed through
+a temporary ASCII hard link. An output filename containing non-ASCII characters
+is first written under an ASCII temporary name and then renamed to the requested
+filename after eac3to succeeds. Source and output parent directories must
+already exist.
+
+The alias workspace is created lazily under the wrapper EXE directory when it
+is writable and ASCII-only; otherwise it uses the system temporary directory
+when that path is writable and ASCII-only. UNC paths, relative non-ASCII paths,
+and output extensions containing non-ASCII characters are rejected instead of
+being passed unsafely to legacy eac3to. If final output renaming fails, the
+wrapper preserves and logs the staged file path for manual recovery.
 
 This prevents affected paths from reaching eac3to's legacy command-line parser,
 so installing the wrapper removes the need to change the console code page to
-UTF-8. Creating the temporary junction requires ordinary write permission in
-the current user's temporary directory on a local NTFS volume.
+UTF-8.
 
 Limitations
 -----------

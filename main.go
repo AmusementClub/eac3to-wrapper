@@ -172,6 +172,12 @@ type Track struct {
 	Filename string
 }
 
+type legacyEac3toArgs struct {
+	args     []string
+	finalize func() error
+	cleanup  func()
+}
+
 var extractTrackRe = regexp.MustCompile(`^([1-9][0-9]*):(.*)$`)
 
 // parseEac3toArgs approximately parses eac3to args and see if workaround is
@@ -179,42 +185,47 @@ var extractTrackRe = regexp.MustCompile(`^([1-9][0-9]*):(.*)$`)
 // Specially, if it's extracting from mkv, then mkvFile will be the input mkv
 // file, and tracks will be all the *.sup subtitle tracks.
 // Finally, filtered arguments will be returned as newArgs.
-func parseEac3toArgs(args []string) (newArgs []string, mkvFile string, tracks []Track) {
+func parseEac3toArgs(args []string) (newArgs []string, mkvFile string, tracks []Track, err error) {
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 		newArgsPrev := newArgs
 		newArgs = append(newArgs, arg)
-		if arg[0] != '-' && arg[0] != '+' {
-			// check for mkv filename
-			if fileHasSuffix(arg, ".mkv") && mkvFile == "" {
-				mkvFile = arg
+		if arg == "" || arg[0] == '-' || arg[0] == '+' {
+			continue
+		}
+		// check for mkv filename
+		if fileHasSuffix(arg, ".mkv") && mkvFile == "" {
+			mkvFile = arg
+		}
+		// check for track extraction
+		m := extractTrackRe.FindStringSubmatch(arg)
+		if len(m) != 3 {
+			continue
+		}
+		trackID, convErr := strconv.Atoi(m[1])
+		if convErr != nil {
+			return nil, "", nil, fmt.Errorf("invalid eac3to track ID %q: %w", m[1], convErr)
+		}
+		trk := Track{Id: trackID, Filename: m[2]}
+		if trk.Filename == "" {
+			if len(args) == i+1 || args[i+1] == "" || args[i+1][0] == '-' || args[i+1][0] == '+' {
+				return nil, "", nil, fmt.Errorf("track %d: requires an output filename", trk.Id)
 			}
-			// check for track extraction
-			if m := extractTrackRe.FindStringSubmatch(arg); len(m) == 3 {
-				var trk Track
-				trk.Id, _ = strconv.Atoi(m[1])
-				trk.Filename = m[2]
-				if trk.Filename == "" && len(args) > i+1 {
-					trk.Filename = args[i+1]
-					newArgs = append(newArgs, trk.Filename)
-					i++
-				} else {
-					// we proactively split the extraction into the canonical
-					// two argument "TID:" "FILENAME" format to workaround
-					// Windows' command line issue:
-					// eac3to implements its own command line argument splitter,
-					// and it will treat 2:"file name.flac" differently from
-					// "2:file name.flac".
-					newArgs = newArgsPrev
-					newArgs = append(newArgs, fmt.Sprintf("%d:", trk.Id), trk.Filename)
-				}
-				// only intercept *.sup extractions from *.mkv
-				if mkvFile != "" && fileHasSuffix(trk.Filename, ".sup") {
-					tracks = append(tracks, trk)
-					newArgs = newArgsPrev // remove this extraction
-					continue
-				}
-			}
+			trk.Filename = args[i+1]
+			newArgs = append(newArgs, trk.Filename)
+			i++
+		} else {
+			// We proactively split the extraction into the canonical two argument
+			// "TID:" "FILENAME" format. eac3to implements its own command line
+			// splitter and treats 2:"file name.flac" differently from
+			// "2:file name.flac".
+			newArgs = newArgsPrev
+			newArgs = append(newArgs, fmt.Sprintf("%d:", trk.Id), trk.Filename)
+		}
+		// Only intercept *.sup extractions from *.mkv.
+		if mkvFile != "" && fileHasSuffix(trk.Filename, ".sup") {
+			tracks = append(tracks, trk)
+			newArgs = newArgsPrev // remove this extraction
 		}
 	}
 	log.Printf("translated %q, mkv %q, tracks %v", newArgs, mkvFile, tracks)
@@ -223,14 +234,12 @@ func parseEac3toArgs(args []string) (newArgs []string, mkvFile string, tracks []
 
 func main() {
 	checkEnv()
-	args, cleanup, err := repairEac3toArgs(os.Args[1:])
+	nargs, mkvf, tracks, err := parseEac3toArgs(os.Args[1:])
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer cleanup()
-	log.Printf("version %s, command line %q", version, append([]string{os.Args[0]}, args...))
+	log.Printf("version %s, command line %q", version, append([]string{os.Args[0]}, nargs...))
 
-	nargs, mkvf, tracks := parseEac3toArgs(args)
 	if mkvf != "" && len(tracks) > 0 {
 		info, err := getMkvTracks(mkvf)
 		if err != nil {
@@ -243,6 +252,9 @@ func main() {
 		// build mkvextract args
 		extArgs := []string{mkvf, "tracks"}
 		for _, trk := range tracks {
+			if trk.Id <= 0 || trk.Id >= len(mapping) || mapping[trk.Id] < 0 {
+				log.Fatalf("requested eac3to track %d is unavailable; source exposes tracks 1-%d", trk.Id, len(mapping)-1)
+			}
 			extArgs = append(extArgs, fmt.Sprintf("%d:%s", mapping[trk.Id], trk.Filename))
 		}
 		err = run(mkvExtractPath, extArgs, true)
@@ -252,8 +264,19 @@ func main() {
 		log.Printf("mkvextract succeeded.")
 	}
 
-	err = run(eac3toPath, nargs, false)
+	legacy, err := prepareLegacyEac3toArgs(nargs)
 	if err != nil {
+		log.Fatal(err)
+	}
+	defer legacy.cleanup()
+
+	err = run(eac3toPath, legacy.args, false)
+	if err != nil {
+		legacy.cleanup()
+		log.Fatal(err)
+	}
+	if err := legacy.finalize(); err != nil {
+		legacy.cleanup()
 		log.Fatal(err)
 	}
 	log.Printf("%s succeeded.", prefix)

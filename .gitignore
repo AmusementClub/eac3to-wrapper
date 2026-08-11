@@ -4,5 +4,6 @@
 
 # Manual eac3to fixtures, test binaries, and generated media/logs.
 /test/
+/*.exe
 /*.eac3to.log
 /*.txt

@@ -9,8 +9,12 @@ import (
 	"syscall"
 )
 
-func repairEac3toArgs(args []string) ([]string, func(), error) {
-	return args, func() {}, nil
+func prepareLegacyEac3toArgs(args []string) (*legacyEac3toArgs, error) {
+	return &legacyEac3toArgs{
+		args:     args,
+		finalize: func() error { return nil },
+		cleanup:  func() {},
+	}, nil
 }
 
 // redirectStderr redirects all stderr output (specifically, panic) to given f.
