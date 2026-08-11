@@ -19,7 +19,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/AkarinVS/eac3to-wrapper/mkv"
+	"eac3to-wrapper/mkv"
 )
 
 const prefix = "eac3to-wrapper"
