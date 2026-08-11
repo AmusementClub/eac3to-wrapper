@@ -2,9 +2,9 @@ name: Build (Windows)
 
 on:
   push:
+    branches:
+      - "**"
   pull_request:
-  release:
-    types: [created]
   workflow_dispatch:
 
 jobs:
@@ -12,22 +12,22 @@ jobs:
     runs-on: windows-2022
 
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
       with:
         submodules: recursive
 
     - name: Setup Go
-      uses: actions/setup-go@v5
+      uses: actions/setup-go@v7
       with:
         go-version: '1.17'
 
     - name: Build eac3to-wrapper
       shell: bash
       run: |
-        go build
+        go build -o eac3to-wrapper.exe
 
     - name: Upload artifact
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v5
       with:
         name: release
         path: ./*.exe
