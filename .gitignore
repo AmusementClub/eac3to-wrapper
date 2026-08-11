@@ -1,0 +1,8 @@
+# Local portable Go toolchain and its downloaded archive.
+/tools/
+/go*.windows-*.zip
+
+# Manual eac3to fixtures, test binaries, and generated media/logs.
+/test/
+/*.eac3to.log
+/*.txt
