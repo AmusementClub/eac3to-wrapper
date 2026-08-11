@@ -1,4 +1,4 @@
-name: Release
+name: Release Windows Binaries
 
 on:
   push:
@@ -7,71 +7,66 @@ on:
   release:
     types: [created]
 
-permissions:
-  contents: write
-
 jobs:
-  prepare-release:
-    runs-on: windows-2022
-    outputs:
-      tag: ${{ steps.tag.outputs.value }}
-
-    steps:
-      - name: Determine release tag
-        id: tag
-        shell: pwsh
-        run: |
-          if ($env:GITHUB_REF -like 'refs/tags/*') {
-            $tag = $env:GITHUB_REF -replace '^refs/tags/', ''
-          } else {
-            $tag = '${{ github.event.release.tag_name }}'
-          }
-          "value=$tag" >> $env:GITHUB_OUTPUT
-
-      - name: Create release for a pushed tag
-        if: github.event_name == 'push'
-        shell: pwsh
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          gh release view "${{ steps.tag.outputs.value }}" 2>$null
-          if ($LASTEXITCODE -ne 0) {
-            gh release create "${{ steps.tag.outputs.value }}" --generate-notes
-          }
-
-  release-windows:
-    name: Release Windows Binaries
-    needs: prepare-release
+  build-windows:
+    name: Build Windows (${{ matrix.goarch }})
     runs-on: windows-2022
 
     strategy:
       matrix:
-        goos: [windows]
-        goarch: ["386", amd64]
+        goarch: ["386", "amd64"]
 
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.release.tag_name || github.ref }}
 
       - name: Setup Go
         uses: actions/setup-go@v7
         with:
           go-version: '1.26.5'
 
-      - name: Build release binary
+      - name: Build release package
         shell: pwsh
         env:
-          GOOS: ${{ matrix.goos }}
+          GOOS: windows
           GOARCH: ${{ matrix.goarch }}
+          RELEASE_VERSION: ${{ github.event.release.tag_name || github.ref_name }}
         run: |
+          $archive = "eac3to-wrapper-$env:RELEASE_VERSION-windows-${{ matrix.goarch }}.zip"
           go build `
-            -ldflags "-X main.version=${{ needs.prepare-release.outputs.tag }}" `
-            -o "eac3to-wrapper_windows_${{ matrix.goarch }}.exe"
+            -ldflags "-X main.version=$env:RELEASE_VERSION" `
+            -o eac3to-wrapper.exe
+          Compress-Archive `
+            -LiteralPath "eac3to-wrapper.exe" `
+            -DestinationPath $archive `
+            -CompressionLevel Optimal
 
-      - name: Upload release binary
-        shell: pwsh
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          gh release upload "${{ needs.prepare-release.outputs.tag }}" `
-            "eac3to-wrapper_windows_${{ matrix.goarch }}.exe" `
-            --clobber
+      - name: Upload release artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: windows-${{ matrix.goarch }}
+          path: eac3to-wrapper-${{ github.event.release.tag_name || github.ref_name }}-windows-${{ matrix.goarch }}.zip
+          if-no-files-found: error
+
+  publish-release:
+    name: Publish Release
+    needs: build-windows
+    runs-on: windows-2022
+    steps:
+      - name: Download release artifacts
+        uses: actions/download-artifact@v7
+        with:
+          pattern: windows-*
+          path: release-assets
+          merge-multiple: true
+
+      - name: Create release and upload Windows binaries
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.release.tag_name || github.ref_name }}
+          target_commitish: ${{ github.event.release.tag_name || github.sha }}
+          generate_release_notes: true
+          files: release-assets/*.zip
+          fail_on_unmatched_files: true
+          overwrite_files: true
