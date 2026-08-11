@@ -2,7 +2,8 @@
 //
 // This program wraps eac3to and fixes long-standing bugs:
 // (1) unable to decompress zlib deflated PGS subtitles in mkv.
-//     It will transparently uses mkvmerge to extract *.sup.
+//
+//	It will transparently uses mkvmerge to extract *.sup.
 package main
 
 import (
@@ -222,9 +223,14 @@ func parseEac3toArgs(args []string) (newArgs []string, mkvFile string, tracks []
 
 func main() {
 	checkEnv()
-	log.Printf("version %s, command line %q", version, os.Args)
+	args, cleanup, err := repairEac3toArgs(os.Args[1:])
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer cleanup()
+	log.Printf("version %s, command line %q", version, append([]string{os.Args[0]}, args...))
 
-	nargs, mkvf, tracks := parseEac3toArgs(os.Args[1:])
+	nargs, mkvf, tracks := parseEac3toArgs(args)
 	if mkvf != "" && len(tracks) > 0 {
 		info, err := getMkvTracks(mkvf)
 		if err != nil {
@@ -246,7 +252,7 @@ func main() {
 		log.Printf("mkvextract succeeded.")
 	}
 
-	err := run(eac3toPath, nargs, false)
+	err = run(eac3toPath, nargs, false)
 	if err != nil {
 		log.Fatal(err)
 	}

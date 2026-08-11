@@ -1,3 +1,4 @@
+//go:build linux || darwin
 // +build linux darwin
 
 package main
@@ -7,6 +8,10 @@ import (
 	"os"
 	"syscall"
 )
+
+func repairEac3toArgs(args []string) ([]string, func(), error) {
+	return args, func() {}, nil
+}
 
 // redirectStderr redirects all stderr output (specifically, panic) to given f.
 // see https://stackoverflow.com/a/34773942.
