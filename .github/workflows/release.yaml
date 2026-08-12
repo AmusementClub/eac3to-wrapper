@@ -62,7 +62,7 @@ jobs:
           merge-multiple: true
 
       - name: Create release and upload Windows binaries
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ github.event.release.tag_name || github.ref_name }}
           target_commitish: ${{ github.event.release.tag_name || github.sha }}
